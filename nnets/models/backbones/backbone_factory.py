@@ -6,7 +6,7 @@ Copyright 2019 IlyaDobrynin (https://github.com/IlyaDobrynin)
 
 """
 from src.models.backbones.pretrained_models import (
-    resnet101, resnet50, resnet34, resnet18
+    resnet152, resnet101, resnet50, resnet34, resnet18
     
 )
 
@@ -14,6 +14,7 @@ from src.models.backbones.pretrained_models import (
 
 BACKBONES = {
     # Done
+    'resnet152': resnet152,                      # 77.438	93.672
     'resnet101': resnet101,                      # 77.438	93.672
     'resnet50': resnet50,                        # 76.002	92.980
     'resnet34': resnet34,                        # 73.554	91.456
