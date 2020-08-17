@@ -91,6 +91,7 @@ def create_models(backbone_retinanet,
                   focal_gamma=2.0,
                   regression_weight=1.0,
                   classification_weight=1.0,
+                  lightweight_pyramid=False,
                   config=None):
     """ Creates three models (model, training_model, prediction_model).
 
@@ -125,14 +126,29 @@ def create_models(backbone_retinanet,
     if multi_gpu > 1:
         from keras.utils import multi_gpu_model
         with tf.device('/cpu:0'):
-            model = model_with_weights(backbone_retinanet(num_classes, num_anchors=num_anchors, modifier=modifier, pyramid_levels=pyramid_levels), weights=weights, skip_mismatch=True)
+            model = model_with_weights(
+                backbone_retinanet(
+                    num_classes,
+                    num_anchors=num_anchors,
+                    modifier=modifier,
+                    pyramid_levels=pyramid_levels,
+                    lightweight=lightweight_pyramid),
+                weights=weights, skip_mismatch=True)
         training_model = multi_gpu_model(model, gpus=multi_gpu)
     else:
-        model          = model_with_weights(backbone_retinanet(num_classes, num_anchors=num_anchors, modifier=modifier, pyramid_levels=pyramid_levels), weights=weights, skip_mismatch=True)
+        model          = model_with_weights(
+            backbone_retinanet(
+                num_classes,
+                num_anchors=num_anchors,
+                modifier=modifier,
+                pyramid_levels=pyramid_levels,
+                lightweight=lightweight_pyramid),
+            weights=weights, skip_mismatch=True)
         training_model = model
 
     # make prediction model
-    prediction_model = retinanet_bbox(model=model, anchor_params=anchor_params, pyramid_levels=pyramid_levels)
+    prediction_model = retinanet_bbox(
+        model=model, anchor_params=anchor_params, pyramid_levels=pyramid_levels, lightweight=lightweight_pyramid)
 
     # compile model
     training_model.compile(
@@ -537,6 +553,7 @@ def parse_args(args):
     group.add_argument('--weights',           help='Initialize the model with weights from a file.')
     group.add_argument('--no-weights',        help='Don\'t initialize the model with any weights.', dest='imagenet_weights', action='store_const', const=False)
     parser.add_argument('--backbone',         help='Backbone model used by retinanet.', default='resnet50', type=str)
+    parser.add_argument('--lightweight',      help='Use lightweight pyramid version', action='store_true')
     parser.add_argument('--batch-size',       help='Size of the batches.', default=1, type=int)
     parser.add_argument('--gpu',              help='Id of the GPU to use (as reported by nvidia-smi).', type=int)
     parser.add_argument('--multi-gpu',        help='Number of GPUs to use for parallel processing.', type=int, default=0)
@@ -617,7 +634,8 @@ def main(args=None):
         if args.config and 'pyramid_levels' in args.config:
             pyramid_levels = parse_pyramid_levels(args.config)
 
-        prediction_model = retinanet_bbox(model=model, anchor_params=anchor_params, pyramid_levels=pyramid_levels)
+        prediction_model = retinanet_bbox(
+            model=model, anchor_params=anchor_params, pyramid_levels=pyramid_levels, lightweight=args.lightweight)
     else:
         weights = args.weights
         # default to imagenet if nothing else is specified
@@ -637,6 +655,7 @@ def main(args=None):
             focal_gamma=args.focal_gamma,
             regression_weight=args.regression_weight,
             classification_weight=args.classification_weight,
+            lightweight_pyramid=args.lightweight,
             config=args.config
         )
 

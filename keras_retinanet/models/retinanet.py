@@ -20,10 +20,10 @@ from .. import layers
 from ..utils.anchors import AnchorParameters
 from . import assert_training_model
 
-
 def default_classification_model(
     num_classes,
     num_anchors,
+    num_layers=5,
     pyramid_feature_size=256,
     prior_probability=0.01,
     classification_feature_size=256,
@@ -41,18 +41,42 @@ def default_classification_model(
     Returns
         A keras.models.Model that predicts classes for each anchor.
     """
+
     options = {
         'kernel_size' : 3,
         'strides'     : 1,
         'padding'     : 'same',
     }
 
+    return classification_model(
+        num_classes,
+        num_anchors,
+        options,
+        num_layers,
+        pyramid_feature_size,
+        prior_probability,
+        classification_feature_size,
+        name)
+
+
+def classification_model(
+    num_classes,
+    num_anchors,
+    options,
+    num_layers,
+    pyramid_feature_size,
+    prior_probability,
+    classification_feature_size,
+    name
+):
     if keras.backend.image_data_format() == 'channels_first':
         inputs  = keras.layers.Input(shape=(pyramid_feature_size, None, None))
     else:
         inputs  = keras.layers.Input(shape=(None, None, pyramid_feature_size))
+
     outputs = inputs
-    for i in range(4):
+
+    for i in range(num_layers-1):
         outputs = keras.layers.Conv2D(
             filters=classification_feature_size,
             activation='relu',
@@ -79,7 +103,49 @@ def default_classification_model(
     return keras.models.Model(inputs=inputs, outputs=outputs, name=name)
 
 
-def default_regression_model(num_values, num_anchors, pyramid_feature_size=256, regression_feature_size=256, name='regression_submodel'):
+def lightweight_classification_block(
+        num_layers=4,
+        pyramid_feature_size=256,
+        classification_feature_size=256,
+        name='lightweight_classification_block'
+):
+    options = {
+        'kernel_size' : 1,
+        'strides'     : 1,
+        'padding'     : 'same',
+    }
+
+    if keras.backend.image_data_format() == 'channels_first':
+        inputs = keras.layers.Input(shape=(pyramid_feature_size, None, None))
+    else:
+        inputs = keras.layers.Input(shape=(None, None, pyramid_feature_size))
+
+    outputs = inputs
+
+    for i in range(num_layers):
+        if i % 2 == 1:
+            options['kernel_size'] = 3
+        else:
+            options['kernel_size'] = 1
+        outputs = keras.layers.Conv2D(
+            filters=classification_feature_size,
+            activation='relu',
+            name='pyramid_classification_{}'.format(i),
+            kernel_initializer=keras.initializers.normal(mean=0.0, stddev=0.01, seed=None),
+            bias_initializer='zeros',
+            **options
+        )(outputs)
+
+    return keras.models.Model(inputs=inputs, outputs=outputs, name=name)
+
+def default_regression_model(
+        num_values,
+        num_anchors,
+        num_layers=5,
+        pyramid_feature_size=256,
+        regression_feature_size=256,
+        name='regression_submodel'
+):
     """ Creates the default regression submodel.
 
     Args
@@ -95,6 +161,7 @@ def default_regression_model(num_values, num_anchors, pyramid_feature_size=256, 
     # All new conv layers except the final one in the
     # RetinaNet (classification) subnets are initialized
     # with bias b = 0 and a Gaussian weight fill with stddev = 0.01.
+
     options = {
         'kernel_size'        : 3,
         'strides'            : 1,
@@ -103,12 +170,63 @@ def default_regression_model(num_values, num_anchors, pyramid_feature_size=256, 
         'bias_initializer'   : 'zeros'
     }
 
+    return regression_model(
+        num_values,
+        num_anchors,
+        options,
+        num_layers,
+        pyramid_feature_size,
+        regression_feature_size,
+        name)
+
+def lightweight_regression_block(
+    num_layers=4,
+    pyramid_feature_size=256,
+    regression_feature_size=256,
+    name='lightweight_regression_block'
+):
+    options = {
+        'kernel_size': 1,
+        'strides': 1,
+        'padding': 'same',
+        'kernel_initializer': keras.initializers.normal(mean=0.0, stddev=0.01, seed=None),
+        'bias_initializer': 'zeros'
+    }
+
+    if keras.backend.image_data_format() == 'channels_first':
+        inputs = keras.layers.Input(shape=(pyramid_feature_size, None, None))
+    else:
+        inputs = keras.layers.Input(shape=(None, None, pyramid_feature_size))
+    outputs = inputs
+    for i in range(num_layers):
+        if i % 2 == 1:
+            options['kernel_size'] = 3
+        else:
+            options['kernel_size'] = 1
+        outputs = keras.layers.Conv2D(
+            filters=regression_feature_size,
+            activation='relu',
+            name='pyramid_regression_{}'.format(i),
+            **options
+        )(outputs)
+
+    return keras.models.Model(inputs=inputs, outputs=outputs, name=name)
+
+def regression_model(
+        num_values,
+        num_anchors,
+        options,
+        num_layers,
+        pyramid_feature_size,
+        regression_feature_size,
+        name
+):
     if keras.backend.image_data_format() == 'channels_first':
         inputs  = keras.layers.Input(shape=(pyramid_feature_size, None, None))
     else:
         inputs  = keras.layers.Input(shape=(None, None, pyramid_feature_size))
     outputs = inputs
-    for i in range(4):
+    for i in range(num_layers-1):
         outputs = keras.layers.Conv2D(
             filters=regression_feature_size,
             activation='relu',
@@ -198,6 +316,24 @@ def default_submodels(num_classes, num_anchors):
         ('classification', default_classification_model(num_classes, num_anchors))
     ]
 
+def lightweight_submodels(num_classes, num_anchors):
+    """
+    Args
+        num_classes : Number of classes to use.
+        num_anchors : Number of base anchors.
+
+    Returns
+        Dictioary with submodel and the their names.
+    """
+    return {
+        'lightweight_regression_block': lightweight_regression_block(),
+        'shared_regression_block':  default_regression_model(4, num_anchors, num_layers=4),
+        #'regression': default_regression_model(num_classes, num_anchors),
+        #'lightweight_classification_block': lightweight_classification_block(),
+        #'shared_classification_block': default_classification_model(num_classes, num_anchors, num_layers=4)
+        'classification': default_classification_model(num_classes, num_anchors)
+    }
+
 
 def __build_model_pyramid(name, model, features):
     """ Applies a single submodel to each FPN level.
@@ -225,6 +361,27 @@ def __build_pyramid(models, features):
     """
     return [__build_model_pyramid(n, m, features) for n, m in models]
 
+def __build_lightweight_pyramid(models, features):
+    heaviest_features = features[:1]
+    shared_features = features[1:]
+    pyramid = []
+
+    #regression = models['regression']
+    #pyramid.append(__build_model_pyramid('regression', regression, features)
+    lightweight_regression = models['lightweight_regression_block']
+    output = lightweight_regression(heaviest_features)
+    shared_regression = models['shared_regression_block']
+    pyramid.append(__build_model_pyramid('regression', shared_regression, [output] + shared_features))
+
+    name = 'classification'
+    model = models[name]
+    pyramid.append(__build_model_pyramid(name, model, features))
+    #lightweight_classification = models['lightweight_classification_block']
+    #output = lightweight_classification(heaviest_features)
+    #shared_classification = models['shared_classification_block']
+    #pyramid.append(__build_model_pyramid('classification', shared_classification, [output] + shared_features))
+
+    return pyramid
 
 def __build_anchors(anchor_parameters, features):
     """ Builds anchors for the shape of the features from FPN.
@@ -262,6 +419,7 @@ def retinanet(
     create_pyramid_features = __create_pyramid_features,
     pyramid_levels          = None,
     submodels               = None,
+    lightweight              = False,
     name                    = 'retinanet'
 ):
     """ Construct a RetinaNet model on top of a backbone.
@@ -292,7 +450,10 @@ def retinanet(
         num_anchors = AnchorParameters.default.num_anchors()
 
     if submodels is None:
-        submodels = default_submodels(num_classes, num_anchors)
+        if not lightweight:
+            submodels = default_submodels(num_classes, num_anchors)
+        else:
+            submodels = lightweight_submodels(num_classes, num_anchors)
 
     if pyramid_levels is None:
         pyramid_levels = [3, 4, 5, 6, 7]
@@ -308,7 +469,10 @@ def retinanet(
     feature_list = [features['P{}'.format(p)] for p in pyramid_levels]
 
     # for all pyramid levels, run available submodels
-    pyramids = __build_pyramid(submodels, feature_list)
+    if not lightweight:
+        pyramids = __build_pyramid(submodels, feature_list)
+    else:
+        pyramids = __build_lightweight_pyramid(submodels, feature_list)
 
     return keras.models.Model(inputs=inputs, outputs=pyramids, name=name)
 

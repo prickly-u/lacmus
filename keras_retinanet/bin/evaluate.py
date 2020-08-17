@@ -142,6 +142,7 @@ def parse_args(args):
     parser.add_argument('model',              help='Path to RetinaNet model.')
     parser.add_argument('--convert-model',    help='Convert the model to an inference model (ie. the input is a training model).', action='store_true')
     parser.add_argument('--backbone',         help='The backbone of the model.', default='resnet50')
+    parser.add_argument('--lightweight',      help='Use lightweight pyramid version', action='store_true')
     parser.add_argument('--gpu',              help='Id of the GPU to use (as reported by nvidia-smi).', type=int)
     parser.add_argument('--score-threshold',  help='Threshold on score to filter detections with (defaults to 0.05).', default=0.05, type=float)
     parser.add_argument('--iou-threshold',    help='IoU Threshold to count for a positive detection (defaults to 0.5).', default=0.5, type=float)
@@ -195,7 +196,8 @@ def main(args=None):
 
     # optionally convert the model
     if args.convert_model:
-        model = models.convert_model(model, anchor_params=anchor_params, pyramid_levels=pyramid_levels)
+        model = models.convert_model(
+            model, anchor_params=anchor_params, pyramid_levels=pyramid_levels, lightweight=args.lightweight)
 
     # print model summary
     # print(model.summary())
